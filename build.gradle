@@ -1,0 +1,93 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'com.diffplug.spotless' version '8.0.0'
+    id 'au.com.dius.pact' version '4.7.5'
+}
+
+group = 'uk.gov.laa.adamlb'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation platform('org.springframework.boot:spring-boot-dependencies:4.1.1')
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+
+    compileOnly 'org.projectlombok:lombok:1.18.48'
+    annotationProcessor 'org.projectlombok:lombok:1.18.48'
+
+    testImplementation 'au.com.dius.pact.provider:spring7:4.7.5'
+    testImplementation 'au.com.dius.pact.consumer:junit5:4.7.5'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+}
+
+def brokerUrl = providers.gradleProperty('pactBrokerUrl').orElse('http://localhost:9292')
+def demoVersion = providers.gradleProperty('pactVersion').orElse(project.version.toString())
+def demoBranch = providers.gradleProperty('pactBranch').orElse('demo')
+
+tasks.withType(Test).configureEach {
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform()
+    systemProperty 'pact_do_not_track', 'true'
+}
+
+test {
+    exclude '**/KoalaProviderTest.class'
+}
+
+pact {
+    publish {
+        pactDirectory = layout.buildDirectory.dir('pacts').get().asFile.absolutePath
+        pactBrokerUrl = brokerUrl.get()
+        consumerVersion = demoVersion.get()
+        consumerBranch = demoBranch.get()
+    }
+}
+
+tasks.register('pactConsumerTest', Test) {
+    group = 'verification'
+    description = 'Generate the Crime Assess consumer pact using a local mock server.'
+    filter {
+        includeTestsMatching 'uk.gov.laa.adamlb.pactdemo.client.CrimeAssessConsumerTest'
+    }
+    systemProperty 'pact.rootDir', layout.buildDirectory.dir('pacts').get().asFile.absolutePath
+    systemProperty 'pact.writer.overwrite', 'true'
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('pactProviderTest', Test) {
+    group = 'verification'
+    description = 'Verify Koala contracts from the broker and publish verification results.'
+    filter {
+        includeTestsMatching 'uk.gov.laa.adamlb.pactdemo.api.KoalaProviderTest'
+    }
+    systemProperty 'pactbroker.url', brokerUrl.get()
+    systemProperty 'pact.provider.version', demoVersion.get()
+    systemProperty 'pact.provider.branch', demoBranch.get()
+    systemProperty 'pact.verifier.publishResults', 'true'
+    outputs.upToDateWhen { false }
+}
+
+tasks.named('pactPublish') {
+    dependsOn tasks.named('pactConsumerTest')
+}
+
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+        targetExclude '**/generated/**'
+
+        formatAnnotations()
+        palantirJavaFormat()
+        importOrder('', 'java', 'javax', 'org', 'com')
+
+        endWithNewline()
+        trimTrailingWhitespace()
+        removeUnusedImports()
+        forbidWildcardImports()
+    }
+}

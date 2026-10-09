@@ -1,0 +1,19 @@
+name: pact-demo
+
+services:
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    ports:
+      - "127.0.0.1:9292:9292"
+    environment:
+      PACT_BROKER_DATABASE_ADAPTER: sqlite
+      PACT_BROKER_DATABASE_NAME: /tmp/pact_broker.sqlite3
+      PACT_BROKER_BASE_URL: http://localhost:9292
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "ruby", "-rnet/http", "-e", "exit(Net::HTTP.get_response(URI('http://localhost:9292/diagnostic/status/heartbeat')).is_a?(Net::HTTPSuccess) ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
